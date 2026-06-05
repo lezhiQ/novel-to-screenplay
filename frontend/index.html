@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 小说转剧本工具</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AI 小说转剧本工具</h1>
+            <p class="subtitle">将小说文本自动转换为结构化 YAML 剧本</p>
+        </header>
+
+        <main>
+            <section class="input-section">
+                <div class="form-group">
+                    <label for="title">作品标题</label>
+                    <input type="text" id="title" placeholder="请输入作品标题" value="未命名作品">
+                </div>
+                <div class="form-group">
+                    <label for="novel-text">小说文本</label>
+                    <textarea id="novel-text" rows="12" placeholder="请粘贴小说文本（支持多章节）..."></textarea>
+                </div>
+                <div class="btn-group">
+                    <button id="btn-convert" class="btn btn-primary">开始转换</button>
+                    <button id="btn-export-yaml" class="btn btn-secondary" disabled>导出 YAML</button>
+                    <button id="btn-export-json" class="btn btn-secondary" disabled>导出 JSON</button>
+                </div>
+            </section>
+
+            <section class="output-section">
+                <div class="tabs">
+                    <button class="tab active" data-tab="preview">剧本预览</button>
+                    <button class="tab" data-tab="yaml">YAML 源码</button>
+                </div>
+                <div id="preview" class="tab-content active">
+                    <div id="screenplay-preview" class="preview-placeholder">
+                        转换结果将在这里显示...
+                    </div>
+                </div>
+                <div id="yaml" class="tab-content">
+                    <pre id="yaml-output" class="yaml-code">YAML 源码将在这里显示...</pre>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Powered by Xiaomi MiMo | AI 小说转剧本工具</p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
