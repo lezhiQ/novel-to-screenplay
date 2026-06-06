@@ -45,16 +45,19 @@ def convert(input_data: NovelInput):
 
 @app.post("/api/convert/stream")
 async def convert_stream(input_data: NovelInput):
-    """流式转换：逐步返回 YAML 文本"""
+    """流式转换：逐步返回 YAML 文本，支持进度推送"""
     params = _api_params(input_data)
 
     async def event_generator():
         result = None
-        for chunk in convert_novel_stream(input_data.title, input_data.text, **params):
-            if isinstance(chunk, str):
-                yield {"data": json.dumps({"chunk": chunk}, ensure_ascii=False)}
-            else:
-                result = chunk
+        for item in convert_novel_stream(input_data.title, input_data.text, **params):
+            if item["type"] == "progress":
+                yield {"data": json.dumps({"progress": item["data"]}, ensure_ascii=False)}
+            elif item["type"] == "chunk":
+                yield {"data": json.dumps({"chunk": item["data"]}, ensure_ascii=False)}
+            elif item["type"] == "result":
+                result = item["data"]
+
         done_payload = {"done": True}
         if result:
             done_payload["result"] = result.model_dump()

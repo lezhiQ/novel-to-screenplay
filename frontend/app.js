@@ -123,8 +123,21 @@ btnConvert.addEventListener("click", async () => {
     }
 });
 
-// 流式转换（第1层：只显示原始文本）
+// 流式转换（支持进度推送）
 async function convertStream(title, text) {
+    const progressContainer = $("#progress-container");
+    const progressFill = $("#progress-fill");
+    const progressStatus = $("#progress-status");
+    const progressChapter = $("#progress-chapter");
+    const progressPercentage = $("#progress-percentage");
+
+    // 显示进度条
+    progressContainer.style.display = "block";
+    progressFill.style.width = "0%";
+    progressStatus.textContent = "准备中...";
+    progressChapter.textContent = "0/0 章";
+    progressPercentage.textContent = "0%";
+
     try {
         const res = await fetch(`${API_BASE}/api/convert/stream`, {
             method: "POST",
@@ -134,6 +147,7 @@ async function convertStream(title, text) {
 
         if (!res.ok) {
             console.log("流式接口返回错误:", res.status);
+            progressContainer.style.display = "none";
             return false;
         }
 
@@ -155,14 +169,26 @@ async function convertStream(title, text) {
                     const data = line.slice(6);
                     try {
                         const parsed = JSON.parse(data);
+
+                        // 处理进度更新
+                        if (parsed.progress) {
+                            const p = parsed.progress;
+                            progressFill.style.width = `${p.percentage}%`;
+                            progressStatus.textContent = p.status;
+                            progressChapter.textContent = `${p.current}/${p.total} 章`;
+                            progressPercentage.textContent = `${p.percentage}%`;
+                        }
+
                         if (parsed.done) {
-                            // 流式完成，移除流式效果
+                            // 隐藏进度条
+                            setTimeout(() => {
+                                progressContainer.style.display = "none";
+                            }, 800);
+
                             yamlPre.classList.remove("streaming");
-                            // 优先使用后端发来的结构化结果
                             if (parsed.result) {
                                 lastResult = parsed.result;
                             } else {
-                                // fallback：前端自行解析 YAML
                                 lastResult = parseYamlSafe(yamlContent);
                             }
                             if (lastResult) {
@@ -179,14 +205,10 @@ async function convertStream(title, text) {
                             }
                             return true;
                         } else if (parsed.chunk) {
-                            // 实时显示原始 YAML 文本
                             yamlContent += parsed.chunk;
                             yamlPre.textContent = yamlContent;
-                            // 添加流式效果
                             yamlPre.classList.add("streaming");
-                            // 自动滚动到底部
                             yamlPre.scrollTop = yamlPre.scrollHeight;
-                            // 切换到 YAML 标签页
                             document.querySelector('.tab[data-tab="yaml"]').click();
                         }
                     } catch (e) {
@@ -198,6 +220,7 @@ async function convertStream(title, text) {
         return true;
     } catch (err) {
         console.log("流式转换失败:", err);
+        progressContainer.style.display = "none";
         return false;
     }
 }
