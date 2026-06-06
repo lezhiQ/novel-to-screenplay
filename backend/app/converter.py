@@ -255,13 +255,25 @@ def convert_novel(title: str, text: str, api_key: str = "", api_base: str = "", 
 
 
 def convert_novel_stream(title: str, text: str, api_key: str = "", api_base: str = "", model: str = ""):
-    """流式转换：逐步返回 YAML 文本，最后返回完整结果"""
+    """流式转换：逐步返回 YAML 文本，支持进度推送"""
     chapters = split_chapters(text)
+    total_chapters = len(chapters)
     all_scenes = []
     scene_counter = 0
     prev_context = ""
 
     for i, chapter in enumerate(chapters):
+        # 推送进度
+        yield {
+            "type": "progress",
+            "data": {
+                "current": i + 1,
+                "total": total_chapters,
+                "percentage": int((i + 1) / total_chapters * 100),
+                "status": f"正在处理第 {i + 1}/{total_chapters} 章",
+            },
+        }
+
         prompt = CHAPTER_PROMPT.format(
             title=title,
             chapter_num=i + 1,
@@ -271,7 +283,7 @@ def convert_novel_stream(title: str, text: str, api_key: str = "", api_base: str
         full_response = ""
         for chunk in call_llm_stream(prompt, api_key, api_base, model):
             full_response += chunk
-            yield chunk
+            yield {"type": "chunk", "data": chunk}
 
         data = extract_yaml_from_response(full_response)
         if data and "scenes" in data:
@@ -289,4 +301,4 @@ def convert_novel_stream(title: str, text: str, api_key: str = "", api_base: str
                 last_scene = data["scenes"][-1]
                 prev_context = f"场景{last_scene.get('scene_id', '')}: {last_scene.get('description', '')}"
 
-    yield ScreenplayOutput(title=title, scenes=all_scenes)
+    yield {"type": "result", "data": ScreenplayOutput(title=title, scenes=all_scenes)}
