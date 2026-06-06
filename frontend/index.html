@@ -24,6 +24,9 @@
                     <textarea id="novel-text" rows="12" placeholder="请粘贴小说文本（支持多章节）..."></textarea>
                 </div>
                 <div class="btn-group">
+                    <label class="btn btn-secondary" for="file-upload">上传文件</label>
+                    <input type="file" id="file-upload" accept=".txt,.docx,.pdf" hidden>
+                    <span id="file-name" class="file-name"></span>
                     <button id="btn-convert" class="btn btn-primary">开始转换</button>
                     <button id="btn-export-yaml" class="btn btn-secondary" disabled>导出 YAML</button>
                     <button id="btn-export-json" class="btn btn-secondary" disabled>导出 JSON</button>
