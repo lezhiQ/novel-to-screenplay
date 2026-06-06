@@ -11,6 +11,57 @@ const yamlPre = $("#yaml-output");
 
 let lastResult = null;
 
+// 文件上传
+const fileUpload = $("#file-upload");
+const fileName = $("#file-name");
+
+fileUpload.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const ext = file.name.split(".").pop().toLowerCase();
+    fileName.textContent = file.name;
+
+    if (ext === "txt") {
+        // .txt 直接用 FileReader 读取
+        const reader = new FileReader();
+        reader.onload = () => {
+            textArea.value = reader.result;
+            // 自动提取标题（去掉扩展名）
+            if (titleInput.value === "未命名作品") {
+                titleInput.value = file.name.replace(/\.\w+$/, "");
+            }
+        };
+        reader.readAsText(file, "utf-8");
+    } else if (ext === "docx" || ext === "pdf") {
+        // .docx/.pdf 上传到后端解析
+        const formData = new FormData();
+        formData.append("file", file);
+        try {
+            const res = await fetch(`${API_BASE}/api/upload`, {
+                method: "POST",
+                body: formData,
+            });
+            const data = await res.json();
+            if (data.success) {
+                textArea.value = data.text;
+                if (titleInput.value === "未命名作品") {
+                    titleInput.value = file.name.replace(/\.\w+$/, "");
+                }
+            } else {
+                alert("文件解析失败: " + (data.detail || "未知错误"));
+            }
+        } catch (err) {
+            alert("文件上传失败: " + err.message);
+        }
+    } else {
+        alert("不支持的文件格式，请上传 .txt/.docx/.pdf 文件");
+    }
+
+    // 重置 input 以便重复选择同一文件
+    fileUpload.value = "";
+});
+
 // Tab 切换
 document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {

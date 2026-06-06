@@ -1,5 +1,6 @@
 import json
-from fastapi import FastAPI
+from io import BytesIO
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -65,6 +66,34 @@ def export_as_json(input_data: NovelInput):
     result = convert_novel(input_data.title, input_data.text)
     json_content = export_json(result)
     return {"success": True, "content": json_content, "filename": f"{input_data.title}.json"}
+
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """上传文件并提取文本内容，支持 .txt/.docx/.pdf"""
+    filename = file.filename or ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    if ext == "txt":
+        content = await file.read()
+        text = content.decode("utf-8", errors="replace")
+    elif ext == "docx":
+        import docx
+        content = await file.read()
+        doc = docx.Document(BytesIO(content))
+        text = "\n".join(p.text for p in doc.paragraphs)
+    elif ext == "pdf":
+        from PyPDF2 import PdfReader
+        content = await file.read()
+        reader = PdfReader(BytesIO(content))
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    else:
+        raise HTTPException(status_code=400, detail=f"不支持的文件格式: .{ext}，请上传 .txt/.docx/.pdf 文件")
+
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="文件内容为空")
+
+    return {"success": True, "text": text, "filename": filename}
 
 
 # 挂载前端静态文件

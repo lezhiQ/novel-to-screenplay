@@ -211,6 +211,13 @@ footer {
     margin-top: 2rem;
 }
 
+.file-name {
+    font-size: 0.85rem;
+    color: #666;
+    margin-left: 0.5rem;
+    align-self: center;
+}
+
 /* 加载动画 */
 .loading-spinner {
     text-align: center;
