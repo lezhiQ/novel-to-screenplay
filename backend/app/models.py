@@ -42,3 +42,12 @@ class ScreenplayOutput(BaseModel):
     title: str = Field(..., description="剧本标题")
     author: Optional[str] = Field(default="", description="原作/编剧")
     scenes: list[Scene] = Field(default_factory=list, description="场景列表")
+
+
+class CharacterInfo(BaseModel):
+    """角色信息"""
+    name: str = Field(..., description="角色名称")
+    scene_count: int = Field(default=0, description="出场场景数")
+    dialogue_count: int = Field(default=0, description="台词数量")
+    actions: list[str] = Field(default_factory=list, description="代表性动作列表")
+    first_appearance: Optional[str] = Field(default=None, description="首次出现场景")
