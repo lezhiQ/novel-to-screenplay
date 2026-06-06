@@ -26,6 +26,39 @@ SYSTEM_PROMPT = """你是一位专业的金牌编剧和分镜导演，擅长将�
 5. 避免将所有动作堆在对话前面，要让动作和对话交织在一起
 6. 按照时间顺序排列，形成"动作-对话-动作"的自然节奏
 
+【示例：正确的动作与对话编排】
+错误示例（动作和对话分开放，顺序丢失）：
+  actions:
+    - character: "林小雨"
+      action: "推开门"
+    - character: "陈默"
+      action: "抬起头"
+  dialogues:
+    - character: "林小雨"
+      line: "请问这里有人吗？"
+    - character: "陈默"
+      line: "没有，请坐。"
+
+正确示例（使用 items 列表，动作与对话按时间顺序交织）：
+  items:
+    - type: action
+      character: "林小雨"
+      action: "推开门，风铃发出清脆声响"
+    - type: dialogue
+      character: "林小雨"
+      line: "请问这里有人吗？"
+      action: "指着对面的椅子"
+    - type: action
+      character: "陈默"
+      action: "抬起头，愣了一下"
+    - type: dialogue
+      character: "陈默"
+      line: "没有，请坐。"
+      action: "微笑"
+    - type: action
+      character: "林小雨"
+      action: "放下背包，坐下来"
+
 【输出格式要求】
 严格按照 YAML 格式输出，每个场景必须包含：
 - scene_id: 场景编号
@@ -39,7 +72,8 @@ SYSTEM_PROMPT = """你是一位专业的金牌编剧和分镜导演，擅长将�
 - 动作要按照时间顺序排列
 - 对话前的动作放在对话前面
 - 对话后的反应放在对话后面
-- 形成"动作-对话-动作"的自然节奏"""
+- 形成"动作-对话-动作"的自然节奏
+- 不要将所有动作堆在对话前面，要让动作和对话交织在一起"""
 
 
 CONVERT_PROMPT = """请将以下小说片段改编为专业分镜头剧本。
@@ -68,17 +102,21 @@ scenes:
     location: "具体场景地点（如：咖啡馆角落、图书馆门口）"
     time: "时间（日/夜/黄昏/清晨等）"
     description: "场景氛围和主要动作概述"
-    dialogues:
-      - character: "角色名"
+    items:
+      - type: action
+        character: "角色名"
+        action: "详细的动作描写（包含表情、肢体语言）"
+      - type: dialogue
+        character: "角色名"
         line: "完整台词（保留原文语气）"
         action: "说话时的动作或表情（可选）"
-    actions:
-      - character: "角色名"
-        action: "详细的动作描写（包含表情、肢体语言）"
+      - type: action
+        character: "角色名"
+        action: "对话后的反应动作"
 ```
 
 【重要：动作顺序】
-- 动作要按照时间顺序排列
+- 使用 items 列表，动作和对话按时间顺序交替排列
 - 对话前的动作放在对话前面
 - 对话后的反应放在对话后面
 - 形成"动作-对话-动作"的自然节奏
@@ -115,17 +153,21 @@ scenes:
     location: "具体场景地点"
     time: "时间（日/夜/黄昏等）"
     description: "场景氛围和主要动作概述"
-    dialogues:
-      - character: "角色名"
+    items:
+      - type: action
+        character: "角色名"
+        action: "详细的动作描写"
+      - type: dialogue
+        character: "角色名"
         line: "完整台词"
         action: "说话时的动作或表情"
-    actions:
-      - character: "角色名"
-        action: "详细的动作描写"
+      - type: action
+        character: "角色名"
+        action: "对话后的反应动作"
 ```
 
 【重要：动作顺序】
-- 动作要按照时间顺序排列
+- 使用 items 列表，动作和对话按时间顺序交替排列
 - 对话前的动作放在对话前面
 - 对话后的反应放在对话后面
 - 形成"动作-对话-动作"的自然节奏

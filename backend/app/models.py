@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -10,6 +10,7 @@ class NovelInput(BaseModel):
 
 class Dialogue(BaseModel):
     """单条对话"""
+    type: str = Field(default="dialogue", description="类型标识")
     character: str = Field(..., description="角色名称")
     line: Optional[str] = Field(default="", description="对话内容")
     action: Optional[str] = Field(default="", description="伴随动作或表情")
@@ -17,6 +18,7 @@ class Dialogue(BaseModel):
 
 class Action(BaseModel):
     """舞台指示/动作描写"""
+    type: str = Field(default="action", description="类型标识")
     character: Optional[str] = Field(default="", description="相关角色")
     action: Optional[str] = Field(default="", description="动作或场景描述")
 
@@ -27,8 +29,9 @@ class Scene(BaseModel):
     location: Optional[str] = Field(default="", description="场景地点")
     time: Optional[str] = Field(default="", description="时间（白天/夜晚等）")
     description: Optional[str] = Field(default="", description="场景概述")
-    dialogues: list[Dialogue] = Field(default_factory=list, description="对话列表")
-    actions: list[Action] = Field(default_factory=list, description="动作/指示列表")
+    items: list[Union[Action, Dialogue]] = Field(default_factory=list, description="有序的动作和对话列表")
+    dialogues: list[Dialogue] = Field(default_factory=list, description="对话列表（兼容旧格式）")
+    actions: list[Action] = Field(default_factory=list, description="动作列表（兼容旧格式）")
 
 
 class ScreenplayOutput(BaseModel):
