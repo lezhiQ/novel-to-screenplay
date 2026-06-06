@@ -1,5 +1,6 @@
 import json
 from io import BytesIO
+from urllib.parse import quote
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -8,7 +9,13 @@ from sse_starlette.sse import EventSourceResponse
 
 from backend.app.models import NovelInput, ScreenplayOutput
 from backend.app.converter import convert_novel, convert_novel_stream
-from backend.app.export import export_yaml, export_json
+from backend.app.export import export_yaml, export_json, export_docx
+from pydantic import BaseModel
+
+
+class DocxExportInput(BaseModel):
+    title: str
+    data: ScreenplayOutput
 
 app = FastAPI(title="AI 小说转剧本工具", version="0.1.0")
 
@@ -70,6 +77,19 @@ def export_as_json(input_data: NovelInput):
     result = convert_novel(input_data.title, input_data.text, **_api_params(input_data))
     json_content = export_json(result)
     return {"success": True, "content": json_content, "filename": f"{input_data.title}.json"}
+
+
+@app.post("/api/export/docx")
+def export_as_docx(input_data: DocxExportInput):
+    """导出 DOCX 文件（使用已转换的数据）"""
+    docx_content = export_docx(input_data.data)
+    from fastapi.responses import Response
+    filename = quote(f"{input_data.title}.docx")
+    return Response(
+        content=docx_content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
+    )
 
 
 @app.post("/api/upload")

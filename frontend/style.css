@@ -211,6 +211,46 @@ footer {
     margin-top: 2rem;
 }
 
+/* 编辑模式样式 */
+.editable-on {
+    border: 1px dashed #4a90d9;
+    border-radius: 3px;
+    padding: 2px 4px;
+    background: rgba(74, 144, 217, 0.05);
+    cursor: text;
+    min-height: 1em;
+    display: inline-block;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.editable-on:focus {
+    outline: none;
+    border-color: #2c5282;
+    background: rgba(74, 144, 217, 0.1);
+    box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.2);
+}
+
+.editable-on.modified {
+    color: #e53e3e;
+    border-color: #e53e3e;
+    background: rgba(229, 62, 62, 0.05);
+}
+
+.editable-on.modified:focus {
+    border-color: #c53030;
+    background: rgba(229, 62, 62, 0.1);
+    box-shadow: 0 0 0 2px rgba(229, 62, 62, 0.2);
+}
+
+.editing .scene-card {
+    border-color: #4a90d9;
+    background: #f0f7ff;
+}
+
+.editing .scene-card h3 {
+    color: #2c5282;
+}
+
 .api-settings {
     background: #fff;
     border-radius: 8px;
