@@ -11,6 +11,15 @@ const yamlPre = $("#yaml-output");
 
 let lastResult = null;
 
+// API 设置
+function getApiSettings() {
+    return {
+        api_key: $("#api-key").value.trim(),
+        api_base: $("#api-base").value.trim(),
+        model: $("#model-name").value.trim(),
+    };
+}
+
 // 文件上传
 const fileUpload = $("#file-upload");
 const fileName = $("#file-name");
@@ -108,7 +117,7 @@ async function convertStream(title, text) {
         const res = await fetch(`${API_BASE}/api/convert/stream`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, text }),
+            body: JSON.stringify({ title, text, ...getApiSettings() }),
         });
 
         if (!res.ok) {
@@ -183,7 +192,7 @@ async function convertNonStream(title, text) {
     const res = await fetch(`${API_BASE}/api/convert`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, text }),
+        body: JSON.stringify({ title, text, ...getApiSettings() }),
     });
 
     if (!res.ok) throw new Error(`请求失败: ${res.status}`);

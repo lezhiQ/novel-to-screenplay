@@ -14,6 +14,24 @@
         </header>
 
         <main>
+            <details class="api-settings">
+                <summary>API 设置（可选）</summary>
+                <div class="api-settings-body">
+                    <div class="form-group">
+                        <label for="api-key">API Key</label>
+                        <input type="password" id="api-key" placeholder="留空则使用服务器默认密钥">
+                    </div>
+                    <div class="form-group">
+                        <label for="api-base">API Base URL</label>
+                        <input type="text" id="api-base" placeholder="如 https://api.openai.com/v1">
+                    </div>
+                    <div class="form-group">
+                        <label for="model-name">模型名称</label>
+                        <input type="text" id="model-name" placeholder="如 mimo-v2.5-pro">
+                    </div>
+                </div>
+            </details>
+
             <section class="input-section">
                 <div class="form-group">
                     <label for="title">作品标题</label>

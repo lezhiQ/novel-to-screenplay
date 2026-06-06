@@ -25,24 +25,28 @@ def health_check():
     return {"status": "ok"}
 
 
+def _api_params(input_data: NovelInput) -> dict:
+    return {"api_key": input_data.api_key, "api_base": input_data.api_base, "model": input_data.model}
+
+
 @app.post("/api/convert")
 def convert(input_data: NovelInput):
     """非流式转换：一次性返回完整剧本"""
-    result = convert_novel(input_data.title, input_data.text)
+    result = convert_novel(input_data.title, input_data.text, **_api_params(input_data))
     return {"success": True, "data": result.model_dump()}
 
 
 @app.post("/api/convert/stream")
 async def convert_stream(input_data: NovelInput):
     """流式转换：逐步返回 YAML 文本"""
+    params = _api_params(input_data)
 
     async def event_generator():
         result = None
-        for chunk in convert_novel_stream(input_data.title, input_data.text):
+        for chunk in convert_novel_stream(input_data.title, input_data.text, **params):
             if isinstance(chunk, str):
                 yield {"data": json.dumps({"chunk": chunk}, ensure_ascii=False)}
             else:
-                # chunk 是 ScreenplayOutput 对象（最终结果）
                 result = chunk
         done_payload = {"done": True}
         if result:
@@ -55,7 +59,7 @@ async def convert_stream(input_data: NovelInput):
 @app.post("/api/export/yaml")
 def export_as_yaml(input_data: NovelInput):
     """转换并导出 YAML 文件"""
-    result = convert_novel(input_data.title, input_data.text)
+    result = convert_novel(input_data.title, input_data.text, **_api_params(input_data))
     yaml_content = export_yaml(result)
     return {"success": True, "content": yaml_content, "filename": f"{input_data.title}.yaml"}
 
@@ -63,7 +67,7 @@ def export_as_yaml(input_data: NovelInput):
 @app.post("/api/export/json")
 def export_as_json(input_data: NovelInput):
     """转换并导出 JSON 文件"""
-    result = convert_novel(input_data.title, input_data.text)
+    result = convert_novel(input_data.title, input_data.text, **_api_params(input_data))
     json_content = export_json(result)
     return {"success": True, "content": json_content, "filename": f"{input_data.title}.json"}
 
