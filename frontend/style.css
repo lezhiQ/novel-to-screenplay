@@ -480,6 +480,93 @@ footer {
     background: #f0f0f0;
 }
 
+/* ======================== 角色面板 ======================== */
+
+.character-panel {
+    margin-top: 0.75rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid #eee;
+}
+
+.character-panel .sidebar-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.character-count {
+    font-size: 0.72rem;
+    color: #aaa;
+    font-weight: normal;
+}
+
+.character-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.character-card {
+    padding: 0.5rem 0.6rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: background 0.15s, border-left 0.15s;
+    border-left: 3px solid transparent;
+}
+
+.character-card:hover {
+    background: #f0f0f0;
+}
+
+.character-card.active {
+    background: #e0edff;
+    border-left-color: #4a90d9;
+}
+
+.character-name {
+    font-weight: 600;
+    color: #2c5282;
+    margin-bottom: 0.15rem;
+}
+
+.character-stats {
+    display: flex;
+    gap: 0.6rem;
+    font-size: 0.72rem;
+    color: #888;
+}
+
+.character-actions {
+    margin-top: 0.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.action-tag {
+    display: inline-block;
+    font-size: 0.68rem;
+    background: #f0f0f0;
+    color: #666;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+}
+
+/* 角色高亮效果 */
+.dialogue.character-highlight,
+.scene-action.character-highlight {
+    background: rgba(74, 144, 217, 0.08);
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.dialogue.character-dim,
+.scene-action.character-dim {
+    opacity: 0.35;
+    transition: opacity 0.2s;
+}
+
 /* ======================== 响应式设计 ======================== */
 
 @media (max-width: 768px) {

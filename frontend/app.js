@@ -20,6 +20,8 @@ let isEditing = false;
 let originalTexts = new Map();
 let activeSceneIndex = -1;
 let sceneObserver = null;
+let charactersData = null;
+let activeCharacter = null;
 
 // API 设置
 function getApiSettings() {
@@ -166,6 +168,7 @@ async function convertStream(title, text) {
                             if (lastResult) {
                                 renderPreview(lastResult);
                                 renderYaml(lastResult);
+                                fetchCharacters(lastResult);
                                 btnYaml.disabled = false;
                                 btnJson.disabled = false;
                                 btnDocx.disabled = false;
@@ -214,6 +217,7 @@ async function convertNonStream(title, text) {
         lastResult = data.data;
         renderPreview(lastResult);
         renderYaml(lastResult);
+        fetchCharacters(lastResult);
         btnYaml.disabled = false;
         btnJson.disabled = false;
         btnDocx.disabled = false;
@@ -565,6 +569,100 @@ function renderPreview(data) {
 
 function renderYaml(data) {
     yamlPre.textContent = toYamlString(data);
+}
+
+// ======================== 角色管理 ========================
+
+async function fetchCharacters(data) {
+    try {
+        const res = await fetch(`${API_BASE}/api/characters`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+        });
+        if (!res.ok) return;
+        const result = await res.json();
+        if (result.success) {
+            charactersData = result.characters;
+            renderCharacterPanel(charactersData);
+        }
+    } catch (err) {
+        console.warn("获取角色信息失败:", err);
+    }
+}
+
+function renderCharacterPanel(characters) {
+    const panel = $("#character-panel");
+    const list = $("#character-list");
+    const count = $("#character-count");
+
+    if (!characters || characters.length === 0) {
+        panel.style.display = "none";
+        return;
+    }
+
+    panel.style.display = "block";
+    count.textContent = `共 ${characters.length} 个`;
+
+    let html = "";
+    for (let i = 0; i < characters.length; i++) {
+        const c = characters[i];
+        const actionsHtml = (c.actions || []).slice(0, 3)
+            .map(a => `<span class="action-tag">${a}</span>`).join("");
+        html += `<div class="character-card" data-char-index="${i}" data-char-name="${c.name}">
+            <div class="character-name">${c.name}</div>
+            <div class="character-stats">
+                <span>出场: ${c.scene_count} 场</span>
+                <span>台词: ${c.dialogue_count} 句</span>
+            </div>
+            ${actionsHtml ? `<div class="character-actions">${actionsHtml}</div>` : ""}
+        </div>`;
+    }
+    list.innerHTML = html;
+
+    // 点击角色卡片高亮该角色
+    list.querySelectorAll(".character-card").forEach(card => {
+        card.addEventListener("click", () => {
+            const name = card.dataset.charName;
+            if (activeCharacter === name) {
+                // 取消高亮
+                activeCharacter = null;
+                clearCharacterHighlight();
+                list.querySelectorAll(".character-card").forEach(c => c.classList.remove("active"));
+            } else {
+                activeCharacter = name;
+                highlightCharacter(name);
+                list.querySelectorAll(".character-card").forEach(c => {
+                    c.classList.toggle("active", c.dataset.charName === name);
+                });
+            }
+        });
+    });
+}
+
+function highlightCharacter(name) {
+    const preview = $("#screenplay-preview");
+    // 先移除所有高亮
+    preview.querySelectorAll(".character-highlight").forEach(el => {
+        el.classList.remove("character-highlight");
+        el.classList.remove("character-dim");
+    });
+
+    // 给所有 dialogue 和 action 元素添加样式
+    preview.querySelectorAll(".dialogue, .scene-action").forEach(el => {
+        const charEl = el.querySelector(".character");
+        if (charEl && charEl.textContent.replace(/:$/, "").trim() === name) {
+            el.classList.add("character-highlight");
+        } else {
+            el.classList.add("character-dim");
+        }
+    });
+}
+
+function clearCharacterHighlight() {
+    const preview = $("#screenplay-preview");
+    preview.querySelectorAll(".character-highlight").forEach(el => el.classList.remove("character-highlight"));
+    preview.querySelectorAll(".character-dim").forEach(el => el.classList.remove("character-dim"));
 }
 
 function toYamlString(obj, indent = 0) {

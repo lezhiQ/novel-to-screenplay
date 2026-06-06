@@ -120,6 +120,14 @@ async def upload_file(file: UploadFile = File(...)):
     return {"success": True, "text": text, "filename": filename}
 
 
+@app.post("/api/characters")
+def get_characters(data: ScreenplayOutput):
+    """从剧本数据中提取角色信息"""
+    from backend.app.character import extract_characters
+    characters = extract_characters(data)
+    return {"success": True, "characters": [c.model_dump() for c in characters]}
+
+
 # 挂载前端静态文件
 app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
