@@ -36,9 +36,17 @@ async def convert_stream(input_data: NovelInput):
     """流式转换：逐步返回 YAML 文本"""
 
     async def event_generator():
+        result = None
         for chunk in convert_novel_stream(input_data.title, input_data.text):
-            yield {"data": json.dumps({"chunk": chunk}, ensure_ascii=False)}
-        yield {"data": json.dumps({"done": True})}
+            if isinstance(chunk, str):
+                yield {"data": json.dumps({"chunk": chunk}, ensure_ascii=False)}
+            else:
+                # chunk 是 ScreenplayOutput 对象（最终结果）
+                result = chunk
+        done_payload = {"done": True}
+        if result:
+            done_payload["result"] = result.model_dump()
+        yield {"data": json.dumps(done_payload, ensure_ascii=False)}
 
     return EventSourceResponse(event_generator())
 

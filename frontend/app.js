@@ -33,28 +33,15 @@ btnConvert.addEventListener("click", async () => {
 
     btnConvert.disabled = true;
     btnConvert.textContent = "转换中...";
-    previewDiv.innerHTML = '<p style="color:#888;text-align:center;">正在调用 AI 转换，请稍候...</p>';
+    previewDiv.innerHTML = '<div class="loading-spinner"><div class="spinner"></div><p>正在调用 AI 转换，请稍候...</p></div>';
     yamlPre.textContent = "";
 
     try {
-        // 使用非流式接口（简单可靠）
-        const res = await fetch(`${API_BASE}/api/convert`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, text }),
-        });
-
-        if (!res.ok) throw new Error(`请求失败: ${res.status}`);
-
-        const data = await res.json();
-        if (data.success) {
-            lastResult = data.data;
-            renderPreview(lastResult);
-            renderYaml(lastResult);
-            btnYaml.disabled = false;
-            btnJson.disabled = false;
-        } else {
-            throw new Error("转换失败");
+        // 尝试流式接口
+        const success = await convertStream(title, text);
+        if (!success) {
+            // 流式失败，回退到非流式
+            await convertNonStream(title, text);
         }
     } catch (err) {
         previewDiv.innerHTML = `<p style="color:red;text-align:center;">错误: ${err.message}</p>`;
@@ -63,6 +50,262 @@ btnConvert.addEventListener("click", async () => {
         btnConvert.textContent = "开始转换";
     }
 });
+
+// 流式转换（第1层：只显示原始文本）
+async function convertStream(title, text) {
+    try {
+        const res = await fetch(`${API_BASE}/api/convert/stream`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, text }),
+        });
+
+        if (!res.ok) {
+            console.log("流式接口返回错误:", res.status);
+            return false;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let yamlContent = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    const data = line.slice(6);
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (parsed.done) {
+                            // 流式完成，移除流式效果
+                            yamlPre.classList.remove("streaming");
+                            // 优先使用后端发来的结构化结果
+                            if (parsed.result) {
+                                lastResult = parsed.result;
+                            } else {
+                                // fallback：前端自行解析 YAML
+                                lastResult = parseYamlSafe(yamlContent);
+                            }
+                            if (lastResult) {
+                                renderPreview(lastResult);
+                                renderYaml(lastResult);
+                                btnYaml.disabled = false;
+                                btnJson.disabled = false;
+                                document.querySelector('.tab[data-tab="preview"]').click();
+                            } else {
+                                previewDiv.innerHTML = '<p style="color:#888;text-align:center;">YAML 解析失败，但原始内容已显示在右侧</p>';
+                            }
+                            return true;
+                        } else if (parsed.chunk) {
+                            // 实时显示原始 YAML 文本
+                            yamlContent += parsed.chunk;
+                            yamlPre.textContent = yamlContent;
+                            // 添加流式效果
+                            yamlPre.classList.add("streaming");
+                            // 自动滚动到底部
+                            yamlPre.scrollTop = yamlPre.scrollHeight;
+                            // 切换到 YAML 标签页
+                            document.querySelector('.tab[data-tab="yaml"]').click();
+                        }
+                    } catch (e) {
+                        // 忽略解析错误
+                    }
+                }
+            }
+        }
+        return true;
+    } catch (err) {
+        console.log("流式转换失败:", err);
+        return false;
+    }
+}
+
+// 非流式转换（fallback）
+async function convertNonStream(title, text) {
+    const res = await fetch(`${API_BASE}/api/convert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, text }),
+    });
+
+    if (!res.ok) throw new Error(`请求失败: ${res.status}`);
+
+    const data = await res.json();
+    if (data.success) {
+        lastResult = data.data;
+        renderPreview(lastResult);
+        renderYaml(lastResult);
+        btnYaml.disabled = false;
+        btnJson.disabled = false;
+    } else {
+        throw new Error("转换失败");
+    }
+}
+
+// 安全的 YAML 解析（js-yaml 为主，正则 fallback）
+function parseYamlSafe(yamlStr) {
+    try {
+        // 提取所有 ```yaml ... ``` 代码块（流式输出可能有多个）
+        const blocks = [];
+        const blockRegex = /```yaml\s*\n([\s\S]*?)```/g;
+        let m;
+        while ((m = blockRegex.exec(yamlStr)) !== null) {
+            blocks.push(m[1].trim());
+        }
+
+        // 如果没有代码块标记，尝试直接解析整个内容
+        if (blocks.length === 0) {
+            blocks.push(yamlStr.trim());
+        }
+
+        // 解析每个代码块并合并场景
+        const allScenes = [];
+        let title = "";
+        for (const block of blocks) {
+            try {
+                const result = jsyaml.load(block);
+                if (result) {
+                    if (result.title && !title) title = result.title;
+                    if (result.scenes && Array.isArray(result.scenes)) {
+                        allScenes.push(...result.scenes);
+                    }
+                }
+            } catch (e) {
+                console.warn("js-yaml 解析单个代码块失败:", e);
+            }
+        }
+
+        // 重新编号场景
+        allScenes.forEach((s, i) => { s.scene_id = i + 1; });
+
+        if (allScenes.length > 0) {
+            return { title: title || "剧本", scenes: allScenes };
+        }
+
+        // 所有代码块都解析失败，回退到正则
+        return parseYamlFallback(yamlStr);
+    } catch (e) {
+        console.warn("js-yaml 解析失败，回退到正则解析:", e);
+        return parseYamlFallback(yamlStr);
+    }
+}
+
+// Fallback：正则解析（原有逻辑，支持 items 格式）
+function parseYamlFallback(yamlStr) {
+    try {
+        let clean = yamlStr;
+        const match = clean.match(/```yaml\s*\n([\s\S]*?)```/);
+        if (match) {
+            clean = match[1];
+        }
+
+        const result = { title: "", scenes: [] };
+
+        const titleMatch = clean.match(/title:\s*["']?([^"'\n]+)["']?/);
+        if (titleMatch) {
+            result.title = titleMatch[1].trim();
+        }
+
+        const lines = clean.split('\n');
+        let currentScene = null;
+        let currentSection = null; // 'items', 'dialogues', 'actions'
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const trimmed = line.trim();
+
+            if (!trimmed || trimmed.startsWith('#')) continue;
+
+            if (trimmed.match(/^-?\s*scene_id:\s*(\d+)/)) {
+                const sceneIdMatch = trimmed.match(/scene_id:\s*(\d+)/);
+                if (sceneIdMatch) {
+                    if (currentScene) result.scenes.push(currentScene);
+                    currentScene = {
+                        scene_id: parseInt(sceneIdMatch[1]),
+                        location: "", time: "", description: "",
+                        items: [], dialogues: [], actions: []
+                    };
+                    currentSection = null;
+                }
+                continue;
+            }
+
+            if (!currentScene) continue;
+
+            if (trimmed.match(/^location:\s*/)) {
+                currentScene.location = trimmed.replace(/^location:\s*["']?/, '').replace(/["']?$/, '').trim();
+                currentSection = null;
+            } else if (trimmed.match(/^time:\s*/)) {
+                currentScene.time = trimmed.replace(/^time:\s*["']?/, '').replace(/["']?$/, '').trim();
+                currentSection = null;
+            } else if (trimmed.match(/^description:\s*/)) {
+                currentScene.description = trimmed.replace(/^description:\s*["']?/, '').replace(/["']?$/, '').trim();
+                currentSection = null;
+            } else if (trimmed === 'items:') {
+                currentSection = 'items';
+            } else if (trimmed === 'dialogues:') {
+                currentSection = 'dialogues';
+            } else if (trimmed === 'actions:') {
+                currentSection = 'actions';
+            } else if (currentSection === 'items' && trimmed.startsWith('- type:')) {
+                const typeMatch = trimmed.match(/type:\s*(\w+)/);
+                if (typeMatch) {
+                    const type = typeMatch[1];
+                    if (type === 'dialogue') {
+                        currentScene.items.push({ type: "dialogue", character: "", line: "", action: "" });
+                    } else {
+                        currentScene.items.push({ type: "action", character: "", action: "" });
+                    }
+                }
+            } else if (currentSection === 'items' && currentScene.items.length > 0) {
+                const last = currentScene.items[currentScene.items.length - 1];
+                if (trimmed.match(/^character:\s*/)) {
+                    last.character = trimmed.replace(/^character:\s*["']?/, '').replace(/["']?$/, '').trim();
+                } else if (trimmed.match(/^line:\s*/)) {
+                    last.line = trimmed.replace(/^line:\s*["']?/, '').replace(/["']?$/, '').trim();
+                } else if (trimmed.match(/^action:\s*/)) {
+                    last.action = trimmed.replace(/^action:\s*["']?/, '').replace(/["']?$/, '').trim();
+                }
+            } else if (currentSection === 'dialogues' && trimmed.startsWith('- character:')) {
+                const charMatch = trimmed.match(/character:\s*["']?([^"'\n]+)["']?/);
+                if (charMatch) {
+                    currentScene.dialogues.push({ character: charMatch[1].trim(), line: "", action: "" });
+                }
+            } else if (currentSection === 'dialogues' && currentScene.dialogues.length > 0) {
+                const last = currentScene.dialogues[currentScene.dialogues.length - 1];
+                if (trimmed.match(/^line:\s*/)) {
+                    last.line = trimmed.replace(/^line:\s*["']?/, '').replace(/["']?$/, '').trim();
+                } else if (trimmed.match(/^action:\s*/)) {
+                    last.action = trimmed.replace(/^action:\s*["']?/, '').replace(/["']?$/, '').trim();
+                }
+            } else if (currentSection === 'actions' && trimmed.startsWith('- character:')) {
+                const charMatch = trimmed.match(/character:\s*["']?([^"'\n]+)["']?/);
+                if (charMatch) {
+                    currentScene.actions.push({ character: charMatch[1].trim(), action: "" });
+                }
+            } else if (currentSection === 'actions' && currentScene.actions.length > 0) {
+                const last = currentScene.actions[currentScene.actions.length - 1];
+                if (trimmed.match(/^action:\s*/)) {
+                    last.action = trimmed.replace(/^action:\s*["']?/, '').replace(/["']?$/, '').trim();
+                }
+            }
+        }
+
+        if (currentScene) result.scenes.push(currentScene);
+
+        return result.scenes.length > 0 ? result : null;
+    } catch (e) {
+        console.error("正则解析也失败:", e);
+        return null;
+    }
+}
 
 // 导出 YAML
 btnYaml.addEventListener("click", () => {
@@ -91,13 +334,26 @@ function renderPreview(data) {
         if (scene.description) {
             html += `<p class="scene-action">${scene.description}</p>`;
         }
-        if (scene.actions) {
-            for (const a of scene.actions) {
+
+        // 优先使用 items 列表（按时间顺序排列）
+        if (scene.items && scene.items.length > 0) {
+            for (const item of scene.items) {
+                if (item.type === "dialogue") {
+                    html += `<div class="dialogue">`;
+                    html += `<span class="character">${item.character}:</span>`;
+                    html += `<span class="line">"${item.line}"</span>`;
+                    if (item.action) html += `<span class="action"> (${item.action})</span>`;
+                    html += `</div>`;
+                } else {
+                    html += `<p class="scene-action">[${item.character ? item.character + ": " : ""}${item.action}]</p>`;
+                }
+            }
+        } else {
+            // fallback：旧格式（actions + dialogues 分开）
+            for (const a of (scene.actions || [])) {
                 html += `<p class="scene-action">[${a.character ? a.character + ": " : ""}${a.action}]</p>`;
             }
-        }
-        if (scene.dialogues) {
-            for (const d of scene.dialogues) {
+            for (const d of (scene.dialogues || [])) {
                 html += `<div class="dialogue">`;
                 html += `<span class="character">${d.character}:</span>`;
                 html += `<span class="line">"${d.line}"</span>`;
@@ -105,6 +361,7 @@ function renderPreview(data) {
                 html += `</div>`;
             }
         }
+
         html += `</div>`;
     }
     previewDiv.innerHTML = html;

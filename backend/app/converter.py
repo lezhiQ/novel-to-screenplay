@@ -38,8 +38,11 @@ def call_llm_stream(user_prompt: str):
         stream=True,
     )
     for chunk in stream:
-        if chunk.choices[0].delta.content:
-            yield chunk.choices[0].delta.content
+        # 检查 choices 是否为空
+        if chunk.choices and len(chunk.choices) > 0:
+            # 检查 delta.content 是否存在
+            if chunk.choices[0].delta and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
 
 
 def extract_yaml_from_response(text: str) -> dict:
@@ -57,24 +60,49 @@ def extract_yaml_from_response(text: str) -> dict:
         if match:
             yaml_content = match.group(1).strip()
         else:
-            # 尝试直接解析整个文本
             yaml_content = text.strip()
 
     # 尝试解析 YAML
     try:
         return yaml.safe_load(yaml_content)
-    except yaml.YAMLError as e:
-        # 如果解析失败，尝试修复常见问题
-        print(f"YAML 解析错误: {e}")
-        print(f"原始 YAML:\n{yaml_content[:500]}...")
+    except yaml.YAMLError:
+        pass
 
-        # 尝试修复常见问题
-        fixed_yaml = fix_common_yaml_issues(yaml_content)
-        try:
-            return yaml.safe_load(fixed_yaml)
-        except yaml.YAMLError:
-            # 如果还是失败，尝试更宽松的解析
-            return try_parse_yaml_lenient(yaml_content)
+    # 预处理：修复 AI 生成的 YAML 中常见的引号问题
+    fixed_yaml = preprocess_yaml(yaml_content)
+    try:
+        return yaml.safe_load(fixed_yaml)
+    except yaml.YAMLError:
+        pass
+
+    # 再尝试修复常见格式问题
+    fixed_yaml2 = fix_common_yaml_issues(fixed_yaml)
+    try:
+        return yaml.safe_load(fixed_yaml2)
+    except yaml.YAMLError:
+        pass
+
+    # 最后用宽松解析
+    return try_parse_yaml_lenient(yaml_content)
+
+
+def preprocess_yaml(yaml_str: str) -> str:
+    """预处理 YAML：修复 AI 生成的常见格式问题"""
+    lines = yaml_str.split('\n')
+    fixed = []
+    for line in lines:
+        stripped = line.strip()
+        # 处理 key: "value 形式（缺少右引号）
+        # 匹配 action: "... 或 line: "... 等
+        m = re.match(r'^(\s*(?:action|line|description|location|time):\s*)"(.+)$', line)
+        if m and not stripped.endswith('"'):
+            indent = m.group(1)
+            value = m.group(2)
+            # 转义值中的内部引号
+            value = value.replace('"', '\\"')
+            line = f'{indent}"{value}"'
+        fixed.append(line)
+    return '\n'.join(fixed)
 
 
 def fix_common_yaml_issues(yaml_str: str) -> str:
@@ -104,50 +132,58 @@ def fix_common_yaml_issues(yaml_str: str) -> str:
 def try_parse_yaml_lenient(yaml_str: str) -> dict:
     """更宽松的 YAML 解析，尝试提取关键信息"""
     try:
-        # 尝试用更宽松的方式解析
         import re
 
-        # 提取 title
         title_match = re.search(r'title:\s*["\']?([^"\']+)["\']?', yaml_str)
-        title = title_match.group(1) if title_match else "未知标题"
+        title = title_match.group(1) if title_match else "未命名作品"
 
-        # 提取 scenes
         scenes = []
         scene_pattern = r'-\s*scene_id:\s*(\d+)'
-        scene_matches = re.finditer(scene_pattern, yaml_str)
+        scene_matches = list(re.finditer(scene_pattern, yaml_str))
 
-        for scene_match in scene_matches:
+        for idx, scene_match in enumerate(scene_matches):
             scene_id = int(scene_match.group(1))
-            # 尝试提取这个场景的内容
             scene_start = scene_match.start()
-            # 找到下一个场景或文本结束
-            next_scene = re.search(r'-\s*scene_id:', yaml_str[scene_start + 1:])
-            scene_end = scene_start + 1 + next_scene.start() if next_scene else len(yaml_str)
+            scene_end = scene_matches[idx + 1].start() if idx + 1 < len(scene_matches) else len(yaml_str)
             scene_text = yaml_str[scene_start:scene_end]
 
-            # 提取场景属性
             location = re.search(r'location:\s*["\']?([^"\']+)["\']?', scene_text)
-            time = re.search(r'time:\s*["\']?([^"\']+)["\']?', scene_text)
+            time_m = re.search(r'time:\s*["\']?([^"\']+)["\']?', scene_text)
             description = re.search(r'description:\s*["\']?([^"\']+)["\']?', scene_text)
 
             scene_data = {
                 'scene_id': scene_id,
                 'location': location.group(1) if location else "",
-                'time': time.group(1) if time else "",
+                'time': time_m.group(1) if time_m else "",
                 'description': description.group(1) if description else "",
+                'items': [],
                 'dialogues': [],
                 'actions': []
             }
 
-            # 提取对话
-            dialogue_pattern = r'character:\s*["\']?([^"\']+)["\']?\s*\n\s*line:\s*["\']?([^"\']+)["\']?'
-            dialogue_matches = re.finditer(dialogue_pattern, scene_text)
-            for d_match in dialogue_matches:
-                scene_data['dialogues'].append({
-                    'character': d_match.group(1),
-                    'line': d_match.group(2),
-                    'action': ""
+            # 提取 items（新格式）
+            item_pattern = r'-\s*type:\s*(\w+)\s*\n\s*character:\s*["\']?([^"\']+)["\']?\s*\n(?:\s*line:\s*["\']?([^"\']*)["\']?\s*\n)?(?:\s*action:\s*["\']?([^"\']*)["\']?)?'
+            for item_match in re.finditer(item_pattern, scene_text):
+                item_type = item_match.group(1)
+                character = item_match.group(2)
+                line = item_match.group(3) or ""
+                action = item_match.group(4) or ""
+                scene_data['items'].append({
+                    'type': item_type,
+                    'character': character,
+                    'line': line,
+                    'action': action
                 })
+
+            # 如果没有 items，回退到旧格式
+            if not scene_data['items']:
+                dialogue_pattern = r'character:\s*["\']?([^"\']+)["\']?\s*\n\s*line:\s*["\']?([^"\']+)["\']?'
+                for d_match in re.finditer(dialogue_pattern, scene_text):
+                    scene_data['dialogues'].append({
+                        'character': d_match.group(1),
+                        'line': d_match.group(2),
+                        'action': ""
+                    })
 
             scenes.append(scene_data)
 
@@ -178,38 +214,56 @@ def convert_novel(title: str, text: str) -> ScreenplayOutput:
         response = call_llm(prompt)
         data = extract_yaml_from_response(response)
 
+def _ensure_scene_defaults(scene_data: dict):
+    """确保场景数据中所有字段都有默认值"""
+    scene_data.setdefault("location", "")
+    scene_data.setdefault("time", "")
+    scene_data.setdefault("description", "")
+    scene_data.setdefault("items", [])
+    scene_data.setdefault("dialogues", [])
+    scene_data.setdefault("actions", [])
+    for item in scene_data.get("items", []):
+        item.setdefault("type", "action")
+        item.setdefault("character", "")
+        item.setdefault("action", "")
+        item.setdefault("line", "")
+    for dialogue in scene_data.get("dialogues", []):
+        dialogue.setdefault("character", "")
+        dialogue.setdefault("line", "")
+        dialogue.setdefault("action", "")
+    for action in scene_data.get("actions", []):
+        action.setdefault("character", "")
+        action.setdefault("action", "")
+
+
+def convert_novel(title: str, text: str) -> ScreenplayOutput:
+    """将小说文本转换为剧本（非流式）"""
+    chapters = split_chapters(text)
+    all_scenes = []
+    scene_counter = 0
+    prev_context = ""
+
+    for i, chapter in enumerate(chapters):
+        prompt = CHAPTER_PROMPT.format(
+            title=title,
+            chapter_num=i + 1,
+            prev_context=prev_context,
+            text=chapter["text"]
+        )
+        response = call_llm(prompt)
+        data = extract_yaml_from_response(response)
+
         if data and "scenes" in data:
             for scene_data in data["scenes"]:
                 scene_counter += 1
                 scene_data["scene_id"] = scene_counter
-
-                # 确保所有必需字段都有默认值
-                scene_data.setdefault("location", "")
-                scene_data.setdefault("time", "")
-                scene_data.setdefault("description", "")
-                scene_data.setdefault("dialogues", [])
-                scene_data.setdefault("actions", [])
-
-                # 确保 dialogues 中的每个元素都有必需字段
-                for dialogue in scene_data.get("dialogues", []):
-                    dialogue.setdefault("character", "")
-                    dialogue.setdefault("line", "")
-                    dialogue.setdefault("action", "")
-
-                # 确保 actions 中的每个元素都有必需字段
-                for action in scene_data.get("actions", []):
-                    action.setdefault("character", "")
-                    action.setdefault("action", "")
-
+                _ensure_scene_defaults(scene_data)
                 try:
                     all_scenes.append(Scene(**scene_data))
                 except Exception as e:
                     print(f"场景 {scene_counter} 解析失败: {e}")
-                    print(f"场景数据: {scene_data}")
-                    # 跳过这个场景，继续处理
                     continue
 
-            # 更新前文上下文（取最后一个场景的描述）
             if data["scenes"]:
                 last_scene = data["scenes"][-1]
                 prev_context = f"场景{last_scene.get('scene_id', '')}: {last_scene.get('description', '')}"
@@ -218,14 +272,13 @@ def convert_novel(title: str, text: str) -> ScreenplayOutput:
 
 
 def convert_novel_stream(title: str, text: str):
-    """流式转换：逐步返回 YAML 文本"""
+    """流式转换：逐步返回 YAML 文本，最后返回完整结果"""
     chapters = split_chapters(text)
     all_scenes = []
     scene_counter = 0
     prev_context = ""
 
     for i, chapter in enumerate(chapters):
-        # 使用 CHAPTER_PROMPT 并传递前文上下文
         prompt = CHAPTER_PROMPT.format(
             title=title,
             chapter_num=i + 1,
@@ -237,42 +290,20 @@ def convert_novel_stream(title: str, text: str):
             full_response += chunk
             yield chunk
 
-        # 解析本章结果
         data = extract_yaml_from_response(full_response)
         if data and "scenes" in data:
             for scene_data in data["scenes"]:
                 scene_counter += 1
                 scene_data["scene_id"] = scene_counter
-
-                # 确保所有必需字段都有默认值
-                scene_data.setdefault("location", "")
-                scene_data.setdefault("time", "")
-                scene_data.setdefault("description", "")
-                scene_data.setdefault("dialogues", [])
-                scene_data.setdefault("actions", [])
-
-                # 确保 dialogues 中的每个元素都有必需字段
-                for dialogue in scene_data.get("dialogues", []):
-                    dialogue.setdefault("character", "")
-                    dialogue.setdefault("line", "")
-                    dialogue.setdefault("action", "")
-
-                # 确保 actions 中的每个元素都有必需字段
-                for action in scene_data.get("actions", []):
-                    action.setdefault("character", "")
-                    action.setdefault("action", "")
-
+                _ensure_scene_defaults(scene_data)
                 try:
                     all_scenes.append(Scene(**scene_data))
                 except Exception as e:
                     print(f"场景 {scene_counter} 解析失败: {e}")
-                    print(f"场景数据: {scene_data}")
-                    # 跳过这个场景，继续处理
                     continue
 
-            # 更新前文上下文（取最后一个场景的描述）
             if data["scenes"]:
                 last_scene = data["scenes"][-1]
                 prev_context = f"场景{last_scene.get('scene_id', '')}: {last_scene.get('description', '')}"
 
-    return ScreenplayOutput(title=title, scenes=all_scenes)
+    yield ScreenplayOutput(title=title, scenes=all_scenes)
