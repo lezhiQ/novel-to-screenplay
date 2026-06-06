@@ -6,10 +6,14 @@ const textArea = $("#novel-text");
 const btnConvert = $("#btn-convert");
 const btnYaml = $("#btn-export-yaml");
 const btnJson = $("#btn-export-json");
+const btnEdit = $("#btn-edit");
+const btnDocx = $("#btn-export-docx");
 const previewDiv = $("#screenplay-preview");
 const yamlPre = $("#yaml-output");
 
 let lastResult = null;
+let isEditing = false;
+let originalTexts = new Map();
 
 // API 设置
 function getApiSettings() {
@@ -158,6 +162,8 @@ async function convertStream(title, text) {
                                 renderYaml(lastResult);
                                 btnYaml.disabled = false;
                                 btnJson.disabled = false;
+                                btnDocx.disabled = false;
+                                btnEdit.disabled = false;
                                 document.querySelector('.tab[data-tab="preview"]').click();
                             } else {
                                 previewDiv.innerHTML = '<p style="color:#888;text-align:center;">YAML 解析失败，但原始内容已显示在右侧</p>';
@@ -204,6 +210,8 @@ async function convertNonStream(title, text) {
         renderYaml(lastResult);
         btnYaml.disabled = false;
         btnJson.disabled = false;
+        btnDocx.disabled = false;
+        btnEdit.disabled = false;
     } else {
         throw new Error("转换失败");
     }
@@ -367,9 +375,21 @@ function parseYamlFallback(yamlStr) {
     }
 }
 
+// 导出前自动保存编辑内容
+function autoSaveIfEditing() {
+    if (isEditing) {
+        saveEdits();
+        isEditing = false;
+        btnEdit.textContent = "编辑";
+        previewDiv.classList.remove("editing");
+        toggleEditable(false);
+    }
+}
+
 // 导出 YAML
 btnYaml.addEventListener("click", () => {
     if (!lastResult) return;
+    autoSaveIfEditing();
     const yamlStr = toYamlString(lastResult);
     downloadFile(`${lastResult.title || "screenplay"}.yaml`, yamlStr, "text/yaml");
 });
@@ -377,9 +397,111 @@ btnYaml.addEventListener("click", () => {
 // 导出 JSON
 btnJson.addEventListener("click", () => {
     if (!lastResult) return;
+    autoSaveIfEditing();
     const jsonStr = JSON.stringify(lastResult, null, 2);
     downloadFile(`${lastResult.title || "screenplay"}.json`, jsonStr, "application/json");
 });
+
+// 导出 DOCX
+btnDocx.addEventListener("click", async () => {
+    if (!lastResult) return;
+    autoSaveIfEditing();
+    btnDocx.disabled = true;
+    btnDocx.textContent = "导出中...";
+    try {
+        const res = await fetch(`${API_BASE}/api/export/docx`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: lastResult.title, data: lastResult }),
+        });
+        if (!res.ok) throw new Error(`请求失败: ${res.status}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${lastResult.title || "screenplay"}.docx`;
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        alert("导出失败: " + err.message);
+    } finally {
+        btnDocx.disabled = false;
+        btnDocx.textContent = "导出 DOCX";
+    }
+});
+
+// 编辑/保存切换
+btnEdit.addEventListener("click", () => {
+    if (isEditing) {
+        saveEdits();
+        btnEdit.textContent = "编辑";
+        previewDiv.classList.remove("editing");
+    } else {
+        btnEdit.textContent = "保存";
+        previewDiv.classList.add("editing");
+    }
+    isEditing = !isEditing;
+    toggleEditable(isEditing);
+});
+
+function toggleEditable(on) {
+    const editables = previewDiv.querySelectorAll("[data-field]");
+    editables.forEach(el => {
+        el.contentEditable = on;
+        el.classList.toggle("editable-on", on);
+        if (on) {
+            originalTexts.set(el, el.textContent);
+            el.addEventListener("input", handleEditInput);
+        } else {
+            el.removeEventListener("input", handleEditInput);
+            el.classList.remove("modified");
+        }
+    });
+    if (!on) originalTexts.clear();
+}
+
+function handleEditInput(e) {
+    const el = e.target;
+    const original = originalTexts.get(el);
+    if (original !== undefined) {
+        el.classList.toggle("modified", el.textContent !== original);
+    }
+}
+
+function saveEdits() {
+    const editables = previewDiv.querySelectorAll("[data-field]");
+    editables.forEach(el => {
+        const field = el.dataset.field;
+        const text = el.textContent.trim();
+
+        // 标题没有 data-scene，单独处理
+        if (field === "title") {
+            lastResult.title = text;
+            return;
+        }
+
+        const sceneIdx = parseInt(el.dataset.scene);
+        const itemIdx = el.dataset.item;
+        const scene = lastResult.scenes[sceneIdx];
+        if (!scene) return;
+
+        if (field === "location") {
+            scene.location = text;
+        } else if (field === "time") {
+            scene.time = text.replace(/[()]/g, "").trim();
+        } else if (field === "description") {
+            scene.description = text;
+        } else if (itemIdx !== undefined) {
+            const items = scene.items || [];
+            const item = items[parseInt(itemIdx)];
+            if (!item) return;
+            if (field === "character") item.character = text.replace(/:$/, "").trim();
+            else if (field === "line") item.line = text.replace(/^"|"$/g, "").trim();
+            else if (field === "action") item.action = text.replace(/[()[\]]/g, "").trim();
+        }
+    });
+    renderYaml(lastResult);
+}
 
 function renderPreview(data) {
     if (!data.scenes || data.scenes.length === 0) {
@@ -387,29 +509,29 @@ function renderPreview(data) {
         return;
     }
 
-    let html = `<h2 style="margin-bottom:1rem;">${data.title || "剧本"}</h2>`;
-    for (const scene of data.scenes) {
+    let html = `<h2 data-field="title" style="margin-bottom:1rem;">${data.title || "剧本"}</h2>`;
+    for (let si = 0; si < data.scenes.length; si++) {
+        const scene = data.scenes[si];
         html += `<div class="scene-card">`;
-        html += `<h3>场景 ${scene.scene_id}: ${scene.location || ""} ${scene.time ? "(" + scene.time + ")" : ""}</h3>`;
+        html += `<h3>场景 ${scene.scene_id}: <span data-scene="${si}" data-field="location">${scene.location || ""}</span> <span data-scene="${si}" data-field="time">(${scene.time || ""})</span></h3>`;
         if (scene.description) {
-            html += `<p class="scene-action">${scene.description}</p>`;
+            html += `<p class="scene-action" data-scene="${si}" data-field="description">${scene.description}</p>`;
         }
 
-        // 优先使用 items 列表（按时间顺序排列）
         if (scene.items && scene.items.length > 0) {
-            for (const item of scene.items) {
+            for (let ii = 0; ii < scene.items.length; ii++) {
+                const item = scene.items[ii];
                 if (item.type === "dialogue") {
                     html += `<div class="dialogue">`;
-                    html += `<span class="character">${item.character}:</span>`;
-                    html += `<span class="line">"${item.line}"</span>`;
-                    if (item.action) html += `<span class="action"> (${item.action})</span>`;
+                    html += `<span class="character" data-scene="${si}" data-item="${ii}" data-field="character">${item.character}:</span> `;
+                    html += `<span class="line" data-scene="${si}" data-item="${ii}" data-field="line">"${item.line}"</span>`;
+                    if (item.action) html += ` <span class="action" data-scene="${si}" data-item="${ii}" data-field="action">(${item.action})</span>`;
                     html += `</div>`;
                 } else {
-                    html += `<p class="scene-action">[${item.character ? item.character + ": " : ""}${item.action}]</p>`;
+                    html += `<p class="scene-action">[<span data-scene="${si}" data-item="${ii}" data-field="character">${item.character || ""}</span>: <span data-scene="${si}" data-item="${ii}" data-field="action">${item.action}</span>]</p>`;
                 }
             }
         } else {
-            // fallback：旧格式（actions + dialogues 分开）
             for (const a of (scene.actions || [])) {
                 html += `<p class="scene-action">[${a.character ? a.character + ": " : ""}${a.action}]</p>`;
             }
@@ -425,6 +547,9 @@ function renderPreview(data) {
         html += `</div>`;
     }
     previewDiv.innerHTML = html;
+
+    // 如果正在编辑模式，重新启用编辑
+    if (isEditing) toggleEditable(true);
 }
 
 function renderYaml(data) {
