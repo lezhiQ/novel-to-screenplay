@@ -6,6 +6,9 @@ class NovelInput(BaseModel):
     """小说文本输入"""
     text: str = Field(..., min_length=10, description="小说文本内容")
     title: str = Field(default="未命名作品", description="作品标题")
+    api_key: Optional[str] = Field(default="", description="用户自定义 API Key")
+    api_base: Optional[str] = Field(default="", description="用户自定义 API Base URL")
+    model: Optional[str] = Field(default="", description="用户自定义模型名称")
 
 
 class Dialogue(BaseModel):

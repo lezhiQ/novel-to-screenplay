@@ -7,15 +7,18 @@ from backend.app.prompts import SYSTEM_PROMPT, CONVERT_PROMPT, CHAPTER_PROMPT
 from backend.app.parser import split_chapters
 
 
-def get_client() -> OpenAI:
-    return OpenAI(base_url=MIMO_API_BASE, api_key=MIMO_API_KEY)
+def get_client(api_key: str = "", api_base: str = "") -> OpenAI:
+    return OpenAI(
+        base_url=api_base or MIMO_API_BASE,
+        api_key=api_key or MIMO_API_KEY,
+    )
 
 
-def call_llm(user_prompt: str) -> str:
+def call_llm(user_prompt: str, api_key: str = "", api_base: str = "", model: str = "") -> str:
     """调用小米 MiMo API"""
-    client = get_client()
+    client = get_client(api_key, api_base)
     response = client.chat.completions.create(
-        model=MIMO_MODEL,
+        model=model or MIMO_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
@@ -25,11 +28,11 @@ def call_llm(user_prompt: str) -> str:
     return response.choices[0].message.content
 
 
-def call_llm_stream(user_prompt: str):
+def call_llm_stream(user_prompt: str, api_key: str = "", api_base: str = "", model: str = ""):
     """流式调用小米 MiMo API"""
-    client = get_client()
+    client = get_client(api_key, api_base)
     stream = client.chat.completions.create(
-        model=MIMO_MODEL,
+        model=model or MIMO_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
@@ -196,7 +199,7 @@ def try_parse_yaml_lenient(yaml_str: str) -> dict:
     return None
 
 
-def convert_novel(title: str, text: str) -> ScreenplayOutput:
+def convert_novel(title: str, text: str, api_key: str = "", api_base: str = "", model: str = "") -> ScreenplayOutput:
     """将小说文本转换为剧本（非流式）"""
     chapters = split_chapters(text)
     all_scenes = []
@@ -204,14 +207,13 @@ def convert_novel(title: str, text: str) -> ScreenplayOutput:
     prev_context = ""
 
     for i, chapter in enumerate(chapters):
-        # 使用 CHAPTER_PROMPT 并传递前文上下文
         prompt = CHAPTER_PROMPT.format(
             title=title,
             chapter_num=i + 1,
             prev_context=prev_context,
             text=chapter["text"]
         )
-        response = call_llm(prompt)
+        response = call_llm(prompt, api_key, api_base, model)
         data = extract_yaml_from_response(response)
 
 def _ensure_scene_defaults(scene_data: dict):
@@ -236,7 +238,7 @@ def _ensure_scene_defaults(scene_data: dict):
         action.setdefault("action", "")
 
 
-def convert_novel(title: str, text: str) -> ScreenplayOutput:
+def convert_novel(title: str, text: str, api_key: str = "", api_base: str = "", model: str = "") -> ScreenplayOutput:
     """将小说文本转换为剧本（非流式）"""
     chapters = split_chapters(text)
     all_scenes = []
@@ -250,7 +252,7 @@ def convert_novel(title: str, text: str) -> ScreenplayOutput:
             prev_context=prev_context,
             text=chapter["text"]
         )
-        response = call_llm(prompt)
+        response = call_llm(prompt, api_key, api_base, model)
         data = extract_yaml_from_response(response)
 
         if data and "scenes" in data:
@@ -271,7 +273,7 @@ def convert_novel(title: str, text: str) -> ScreenplayOutput:
     return ScreenplayOutput(title=title, scenes=all_scenes)
 
 
-def convert_novel_stream(title: str, text: str):
+def convert_novel_stream(title: str, text: str, api_key: str = "", api_base: str = "", model: str = ""):
     """流式转换：逐步返回 YAML 文本，最后返回完整结果"""
     chapters = split_chapters(text)
     all_scenes = []
@@ -286,7 +288,7 @@ def convert_novel_stream(title: str, text: str):
             text=chapter["text"]
         )
         full_response = ""
-        for chunk in call_llm_stream(prompt):
+        for chunk in call_llm_stream(prompt, api_key, api_base, model):
             full_response += chunk
             yield chunk
 

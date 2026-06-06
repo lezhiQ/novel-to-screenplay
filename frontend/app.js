@@ -6,10 +6,29 @@ const textArea = $("#novel-text");
 const btnConvert = $("#btn-convert");
 const btnYaml = $("#btn-export-yaml");
 const btnJson = $("#btn-export-json");
+const btnEdit = $("#btn-edit");
+const btnDocx = $("#btn-export-docx");
 const previewDiv = $("#screenplay-preview");
 const yamlPre = $("#yaml-output");
+const sceneList = $("#scene-list");
+const sceneSidebar = $("#scene-sidebar");
+const divider = $("#divider");
+const btnToggleSidebar = $("#btn-toggle-sidebar");
 
 let lastResult = null;
+let isEditing = false;
+let originalTexts = new Map();
+let activeSceneIndex = -1;
+let sceneObserver = null;
+
+// API 设置
+function getApiSettings() {
+    return {
+        api_key: $("#api-key").value.trim(),
+        api_base: $("#api-base").value.trim(),
+        model: $("#model-name").value.trim(),
+    };
+}
 
 // 文件上传
 const fileUpload = $("#file-upload");
@@ -108,7 +127,7 @@ async function convertStream(title, text) {
         const res = await fetch(`${API_BASE}/api/convert/stream`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, text }),
+            body: JSON.stringify({ title, text, ...getApiSettings() }),
         });
 
         if (!res.ok) {
@@ -149,6 +168,8 @@ async function convertStream(title, text) {
                                 renderYaml(lastResult);
                                 btnYaml.disabled = false;
                                 btnJson.disabled = false;
+                                btnDocx.disabled = false;
+                                btnEdit.disabled = false;
                                 document.querySelector('.tab[data-tab="preview"]').click();
                             } else {
                                 previewDiv.innerHTML = '<p style="color:#888;text-align:center;">YAML 解析失败，但原始内容已显示在右侧</p>';
@@ -183,7 +204,7 @@ async function convertNonStream(title, text) {
     const res = await fetch(`${API_BASE}/api/convert`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, text }),
+        body: JSON.stringify({ title, text, ...getApiSettings() }),
     });
 
     if (!res.ok) throw new Error(`请求失败: ${res.status}`);
@@ -195,6 +216,8 @@ async function convertNonStream(title, text) {
         renderYaml(lastResult);
         btnYaml.disabled = false;
         btnJson.disabled = false;
+        btnDocx.disabled = false;
+        btnEdit.disabled = false;
     } else {
         throw new Error("转换失败");
     }
@@ -358,9 +381,21 @@ function parseYamlFallback(yamlStr) {
     }
 }
 
+// 导出前自动保存编辑内容
+function autoSaveIfEditing() {
+    if (isEditing) {
+        saveEdits();
+        isEditing = false;
+        btnEdit.textContent = "编辑";
+        previewDiv.classList.remove("editing");
+        toggleEditable(false);
+    }
+}
+
 // 导出 YAML
 btnYaml.addEventListener("click", () => {
     if (!lastResult) return;
+    autoSaveIfEditing();
     const yamlStr = toYamlString(lastResult);
     downloadFile(`${lastResult.title || "screenplay"}.yaml`, yamlStr, "text/yaml");
 });
@@ -368,9 +403,110 @@ btnYaml.addEventListener("click", () => {
 // 导出 JSON
 btnJson.addEventListener("click", () => {
     if (!lastResult) return;
+    autoSaveIfEditing();
     const jsonStr = JSON.stringify(lastResult, null, 2);
     downloadFile(`${lastResult.title || "screenplay"}.json`, jsonStr, "application/json");
 });
+
+// 导出 DOCX
+btnDocx.addEventListener("click", async () => {
+    if (!lastResult) return;
+    autoSaveIfEditing();
+    btnDocx.disabled = true;
+    btnDocx.textContent = "导出中...";
+    try {
+        const res = await fetch(`${API_BASE}/api/export/docx`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: lastResult.title, data: lastResult }),
+        });
+        if (!res.ok) throw new Error(`请求失败: ${res.status}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${lastResult.title || "screenplay"}.docx`;
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        alert("导出失败: " + err.message);
+    } finally {
+        btnDocx.disabled = false;
+        btnDocx.textContent = "导出 DOCX";
+    }
+});
+
+// 编辑/保存切换
+btnEdit.addEventListener("click", () => {
+    if (isEditing) {
+        saveEdits();
+        btnEdit.textContent = "编辑";
+        previewDiv.classList.remove("editing");
+    } else {
+        btnEdit.textContent = "保存";
+        previewDiv.classList.add("editing");
+    }
+    isEditing = !isEditing;
+    toggleEditable(isEditing);
+});
+
+function toggleEditable(on) {
+    const editables = previewDiv.querySelectorAll("[data-field]");
+    editables.forEach(el => {
+        el.contentEditable = on;
+        el.classList.toggle("editable-on", on);
+        if (on) {
+            originalTexts.set(el, el.textContent);
+            el.addEventListener("input", handleEditInput);
+        } else {
+            el.removeEventListener("input", handleEditInput);
+            el.classList.remove("modified");
+        }
+    });
+    if (!on) originalTexts.clear();
+}
+
+function handleEditInput(e) {
+    const el = e.target;
+    const original = originalTexts.get(el);
+    if (original !== undefined) {
+        el.classList.toggle("modified", el.textContent !== original);
+    }
+}
+
+function saveEdits() {
+    const editables = previewDiv.querySelectorAll("[data-field]");
+    editables.forEach(el => {
+        const field = el.dataset.field;
+        const text = el.textContent.trim();
+
+        if (field === "title") {
+            lastResult.title = text;
+            return;
+        }
+
+        const sceneIdx = parseInt(el.dataset.scene);
+        const itemIdx = el.dataset.item;
+        const scene = lastResult.scenes[sceneIdx];
+        if (!scene) return;
+
+        if (field === "location") {
+            scene.location = text;
+        } else if (field === "time") {
+            scene.time = text.replace(/[()]/g, "").trim();
+        } else if (field === "description") {
+            scene.description = text;
+        } else if (itemIdx !== undefined) {
+            const items = scene.items || [];
+            const item = items[parseInt(itemIdx)];
+            if (!item) return;
+            if (field === "character") item.character = text.replace(/:$/, "").trim();
+            else if (field === "line") item.line = text.replace(/^"|"$/g, "").trim();
+            else if (field === "action") item.action = text.replace(/[()[\]]/g, "").trim();
+        }
+    });
+    renderYaml(lastResult);
+}
 
 function renderPreview(data) {
     if (!data.scenes || data.scenes.length === 0) {
@@ -378,25 +514,27 @@ function renderPreview(data) {
         return;
     }
 
-    let html = `<h2 style="margin-bottom:1rem;">${data.title || "剧本"}</h2>`;
-    for (const scene of data.scenes) {
-        html += `<div class="scene-card">`;
-        html += `<h3>场景 ${scene.scene_id}: ${scene.location || ""} ${scene.time ? "(" + scene.time + ")" : ""}</h3>`;
+    let html = `<h2 data-field="title" style="margin-bottom:1rem;">${data.title || "剧本"}</h2>`;
+    for (let si = 0; si < data.scenes.length; si++) {
+        const scene = data.scenes[si];
+        html += `<div class="scene-card" id="scene-card-${si}">`;
+        html += `<h3>场景 ${scene.scene_id}: <span data-scene="${si}" data-field="location">${scene.location || ""}</span> <span data-scene="${si}" data-field="time">(${scene.time || ""})</span></h3>`;
         if (scene.description) {
-            html += `<p class="scene-action">${scene.description}</p>`;
+            html += `<p class="scene-action" data-scene="${si}" data-field="description">${scene.description}</p>`;
         }
 
         // 优先使用 items 列表（按时间顺序排列）
         if (scene.items && scene.items.length > 0) {
-            for (const item of scene.items) {
+            for (let ii = 0; ii < scene.items.length; ii++) {
+                const item = scene.items[ii];
                 if (item.type === "dialogue") {
                     html += `<div class="dialogue">`;
-                    html += `<span class="character">${item.character}:</span>`;
-                    html += `<span class="line">"${item.line}"</span>`;
-                    if (item.action) html += `<span class="action"> (${item.action})</span>`;
+                    html += `<span class="character" data-scene="${si}" data-item="${ii}" data-field="character">${item.character}:</span> `;
+                    html += `<span class="line" data-scene="${si}" data-item="${ii}" data-field="line">"${item.line}"</span>`;
+                    if (item.action) html += ` <span class="action" data-scene="${si}" data-item="${ii}" data-field="action">(${item.action})</span>`;
                     html += `</div>`;
                 } else {
-                    html += `<p class="scene-action">[${item.character ? item.character + ": " : ""}${item.action}]</p>`;
+                    html += `<p class="scene-action">[<span data-scene="${si}" data-item="${ii}" data-field="character">${item.character || ""}</span>: <span data-scene="${si}" data-item="${ii}" data-field="action">${item.action}</span>]</p>`;
                 }
             }
         } else {
@@ -416,6 +554,13 @@ function renderPreview(data) {
         html += `</div>`;
     }
     previewDiv.innerHTML = html;
+
+    // 渲染场景侧边栏并设置滚动监听
+    renderSceneSidebar(data);
+    setupSceneObserver();
+
+    // 如果正在编辑模式，重新启用编辑
+    if (isEditing) toggleEditable(true);
 }
 
 function renderYaml(data) {
@@ -466,3 +611,147 @@ function downloadFile(name, content, type) {
     a.click();
     URL.revokeObjectURL(url);
 }
+
+// ======================== 场景侧边栏 ========================
+
+function renderSceneSidebar(data) {
+    if (!data || !data.scenes || data.scenes.length === 0) {
+        sceneList.innerHTML = "";
+        return;
+    }
+
+    let html = "";
+    for (let i = 0; i < data.scenes.length; i++) {
+        const s = data.scenes[i];
+        html += `<li class="scene-list-item" data-scene-index="${i}">`;
+        html += `<span class="scene-num">${s.scene_id}</span>`;
+        html += `<span class="scene-location">${s.location || "未知地点"}</span>`;
+        html += `<span class="scene-time">${s.time || ""}</span>`;
+        html += `</li>`;
+    }
+    sceneList.innerHTML = html;
+
+    // 点击场景项滚动到对应场景
+    sceneList.querySelectorAll(".scene-list-item").forEach((item) => {
+        item.addEventListener("click", () => {
+            const idx = item.dataset.sceneIndex;
+            const card = document.getElementById(`scene-card-${idx}`);
+            if (card) {
+                card.scrollIntoView({ behavior: "smooth", block: "start" });
+                setActiveScene(parseInt(idx));
+            }
+        });
+    });
+}
+
+function setActiveScene(index) {
+    if (index === activeSceneIndex) return;
+    activeSceneIndex = index;
+    sceneList.querySelectorAll(".scene-list-item").forEach((item, i) => {
+        item.classList.toggle("active", i === index);
+    });
+    // 确保侧边栏中当前项可见
+    const activeItem = sceneList.querySelector(".scene-list-item.active");
+    if (activeItem) {
+        activeItem.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+}
+
+function setupSceneObserver() {
+    if (sceneObserver) sceneObserver.disconnect();
+    if (!lastResult || !lastResult.scenes || lastResult.scenes.length === 0) return;
+
+    const options = {
+        root: previewDiv,
+        rootMargin: "-10% 0px -60% 0px",
+        threshold: 0,
+    };
+
+    sceneObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            if (entry.isIntersecting) {
+                const idx = parseInt(entry.target.id.replace("scene-card-", ""));
+                setActiveScene(idx);
+            }
+        }
+    }, options);
+
+    for (let i = 0; i < lastResult.scenes.length; i++) {
+        const card = document.getElementById(`scene-card-${i}`);
+        if (card) sceneObserver.observe(card);
+    }
+}
+
+// ======================== 拖拽分隔条 ========================
+
+let isDragging = false;
+
+function initDividerDrag() {
+    if (!divider) return;
+
+    function onStart(e) {
+        e.preventDefault();
+        isDragging = true;
+        divider.classList.add("dragging");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+    }
+
+    function onMove(clientX) {
+        if (!isDragging) return;
+        const pane = divider.parentElement;
+        const paneRect = pane.getBoundingClientRect();
+        const sidebar = pane.querySelector(".scene-sidebar");
+        if (!sidebar) return;
+
+        let newWidth = clientX - paneRect.left;
+        const minW = 160;
+        const maxW = paneRect.width - 200;
+        newWidth = Math.max(minW, Math.min(maxW, newWidth));
+        sidebar.style.width = newWidth + "px";
+    }
+
+    function onEnd() {
+        if (isDragging) {
+            isDragging = false;
+            divider.classList.remove("dragging");
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+        }
+    }
+
+    // Mouse events
+    divider.addEventListener("mousedown", onStart);
+    document.addEventListener("mousemove", (e) => onMove(e.clientX));
+    document.addEventListener("mouseup", onEnd);
+
+    // Touch events (for tablets in landscape)
+    divider.addEventListener("touchstart", (e) => onStart(e), { passive: false });
+    document.addEventListener("touchmove", (e) => {
+        if (isDragging && e.touches.length === 1) {
+            onMove(e.touches[0].clientX);
+        }
+    }, { passive: true });
+    document.addEventListener("touchend", onEnd);
+}
+
+// ======================== 移动端侧边栏切换 ========================
+
+function initSidebarToggle() {
+    if (!btnToggleSidebar || !sceneSidebar) return;
+
+    btnToggleSidebar.addEventListener("click", () => {
+        sceneSidebar.classList.toggle("open");
+    });
+
+    // 移动端点击场景项后自动收起侧边栏
+    sceneList.addEventListener("click", (e) => {
+        if (e.target.closest(".scene-list-item") && window.innerWidth <= 768) {
+            sceneSidebar.classList.remove("open");
+        }
+    });
+}
+
+// 初始化分隔条拖拽和侧边栏切换
+initDividerDrag();
+initSidebarToggle();
