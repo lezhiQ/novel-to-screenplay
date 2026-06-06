@@ -41,9 +41,7 @@ def call_llm_stream(user_prompt: str, api_key: str = "", api_base: str = "", mod
         stream=True,
     )
     for chunk in stream:
-        # 检查 choices 是否为空
         if chunk.choices and len(chunk.choices) > 0:
-            # 检查 delta.content 是否存在
             if chunk.choices[0].delta and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
 
@@ -198,23 +196,6 @@ def try_parse_yaml_lenient(yaml_str: str) -> dict:
 
     return None
 
-
-def convert_novel(title: str, text: str, api_key: str = "", api_base: str = "", model: str = "") -> ScreenplayOutput:
-    """将小说文本转换为剧本（非流式）"""
-    chapters = split_chapters(text)
-    all_scenes = []
-    scene_counter = 0
-    prev_context = ""
-
-    for i, chapter in enumerate(chapters):
-        prompt = CHAPTER_PROMPT.format(
-            title=title,
-            chapter_num=i + 1,
-            prev_context=prev_context,
-            text=chapter["text"]
-        )
-        response = call_llm(prompt, api_key, api_base, model)
-        data = extract_yaml_from_response(response)
 
 def _ensure_scene_defaults(scene_data: dict):
     """确保场景数据中所有字段都有默认值"""

@@ -480,6 +480,7 @@ function saveEdits() {
         const field = el.dataset.field;
         const text = el.textContent.trim();
 
+        // 标题没有 data-scene，单独处理
         if (field === "title") {
             lastResult.title = text;
             return;
@@ -523,7 +524,6 @@ function renderPreview(data) {
             html += `<p class="scene-action" data-scene="${si}" data-field="description">${scene.description}</p>`;
         }
 
-        // 优先使用 items 列表（按时间顺序排列）
         if (scene.items && scene.items.length > 0) {
             for (let ii = 0; ii < scene.items.length; ii++) {
                 const item = scene.items[ii];
@@ -538,7 +538,6 @@ function renderPreview(data) {
                 }
             }
         } else {
-            // fallback：旧格式（actions + dialogues 分开）
             for (const a of (scene.actions || [])) {
                 html += `<p class="scene-action">[${a.character ? a.character + ": " : ""}${a.action}]</p>`;
             }
@@ -558,6 +557,7 @@ function renderPreview(data) {
     // 渲染场景侧边栏并设置滚动监听
     renderSceneSidebar(data);
     setupSceneObserver();
+
 
     // 如果正在编辑模式，重新启用编辑
     if (isEditing) toggleEditable(true);
