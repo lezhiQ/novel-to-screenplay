@@ -57,10 +57,18 @@
                 <div class="tabs">
                     <button class="tab active" data-tab="preview">剧本预览</button>
                     <button class="tab" data-tab="yaml">YAML 源码</button>
+                    <button id="btn-toggle-sidebar" class="btn-sidebar-toggle" title="切换场景导航">☰</button>
                 </div>
                 <div id="preview" class="tab-content active">
-                    <div id="screenplay-preview" class="preview-placeholder">
-                        转换结果将在这里显示...
+                    <div class="split-pane">
+                        <aside id="scene-sidebar" class="scene-sidebar">
+                            <h4 class="sidebar-title">场景导航</h4>
+                            <ul id="scene-list" class="scene-list"></ul>
+                        </aside>
+                        <div class="divider" id="divider"></div>
+                        <div id="screenplay-preview" class="preview-placeholder pane-right">
+                            转换结果将在这里显示...
+                        </div>
                     </div>
                 </div>
                 <div id="yaml" class="tab-content">

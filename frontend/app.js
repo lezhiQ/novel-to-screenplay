@@ -10,10 +10,16 @@ const btnEdit = $("#btn-edit");
 const btnDocx = $("#btn-export-docx");
 const previewDiv = $("#screenplay-preview");
 const yamlPre = $("#yaml-output");
+const sceneList = $("#scene-list");
+const sceneSidebar = $("#scene-sidebar");
+const divider = $("#divider");
+const btnToggleSidebar = $("#btn-toggle-sidebar");
 
 let lastResult = null;
 let isEditing = false;
 let originalTexts = new Map();
+let activeSceneIndex = -1;
+let sceneObserver = null;
 
 // API 设置
 function getApiSettings() {
@@ -512,7 +518,7 @@ function renderPreview(data) {
     let html = `<h2 data-field="title" style="margin-bottom:1rem;">${data.title || "剧本"}</h2>`;
     for (let si = 0; si < data.scenes.length; si++) {
         const scene = data.scenes[si];
-        html += `<div class="scene-card">`;
+        html += `<div class="scene-card" id="scene-card-${si}">`;
         html += `<h3>场景 ${scene.scene_id}: <span data-scene="${si}" data-field="location">${scene.location || ""}</span> <span data-scene="${si}" data-field="time">(${scene.time || ""})</span></h3>`;
         if (scene.description) {
             html += `<p class="scene-action" data-scene="${si}" data-field="description">${scene.description}</p>`;
@@ -547,6 +553,11 @@ function renderPreview(data) {
         html += `</div>`;
     }
     previewDiv.innerHTML = html;
+
+    // 渲染场景侧边栏并设置滚动监听
+    renderSceneSidebar(data);
+    setupSceneObserver();
+
 
     // 如果正在编辑模式，重新启用编辑
     if (isEditing) toggleEditable(true);
@@ -600,3 +611,147 @@ function downloadFile(name, content, type) {
     a.click();
     URL.revokeObjectURL(url);
 }
+
+// ======================== 场景侧边栏 ========================
+
+function renderSceneSidebar(data) {
+    if (!data || !data.scenes || data.scenes.length === 0) {
+        sceneList.innerHTML = "";
+        return;
+    }
+
+    let html = "";
+    for (let i = 0; i < data.scenes.length; i++) {
+        const s = data.scenes[i];
+        html += `<li class="scene-list-item" data-scene-index="${i}">`;
+        html += `<span class="scene-num">${s.scene_id}</span>`;
+        html += `<span class="scene-location">${s.location || "未知地点"}</span>`;
+        html += `<span class="scene-time">${s.time || ""}</span>`;
+        html += `</li>`;
+    }
+    sceneList.innerHTML = html;
+
+    // 点击场景项滚动到对应场景
+    sceneList.querySelectorAll(".scene-list-item").forEach((item) => {
+        item.addEventListener("click", () => {
+            const idx = item.dataset.sceneIndex;
+            const card = document.getElementById(`scene-card-${idx}`);
+            if (card) {
+                card.scrollIntoView({ behavior: "smooth", block: "start" });
+                setActiveScene(parseInt(idx));
+            }
+        });
+    });
+}
+
+function setActiveScene(index) {
+    if (index === activeSceneIndex) return;
+    activeSceneIndex = index;
+    sceneList.querySelectorAll(".scene-list-item").forEach((item, i) => {
+        item.classList.toggle("active", i === index);
+    });
+    // 确保侧边栏中当前项可见
+    const activeItem = sceneList.querySelector(".scene-list-item.active");
+    if (activeItem) {
+        activeItem.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+}
+
+function setupSceneObserver() {
+    if (sceneObserver) sceneObserver.disconnect();
+    if (!lastResult || !lastResult.scenes || lastResult.scenes.length === 0) return;
+
+    const options = {
+        root: previewDiv,
+        rootMargin: "-10% 0px -60% 0px",
+        threshold: 0,
+    };
+
+    sceneObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            if (entry.isIntersecting) {
+                const idx = parseInt(entry.target.id.replace("scene-card-", ""));
+                setActiveScene(idx);
+            }
+        }
+    }, options);
+
+    for (let i = 0; i < lastResult.scenes.length; i++) {
+        const card = document.getElementById(`scene-card-${i}`);
+        if (card) sceneObserver.observe(card);
+    }
+}
+
+// ======================== 拖拽分隔条 ========================
+
+let isDragging = false;
+
+function initDividerDrag() {
+    if (!divider) return;
+
+    function onStart(e) {
+        e.preventDefault();
+        isDragging = true;
+        divider.classList.add("dragging");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+    }
+
+    function onMove(clientX) {
+        if (!isDragging) return;
+        const pane = divider.parentElement;
+        const paneRect = pane.getBoundingClientRect();
+        const sidebar = pane.querySelector(".scene-sidebar");
+        if (!sidebar) return;
+
+        let newWidth = clientX - paneRect.left;
+        const minW = 160;
+        const maxW = paneRect.width - 200;
+        newWidth = Math.max(minW, Math.min(maxW, newWidth));
+        sidebar.style.width = newWidth + "px";
+    }
+
+    function onEnd() {
+        if (isDragging) {
+            isDragging = false;
+            divider.classList.remove("dragging");
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+        }
+    }
+
+    // Mouse events
+    divider.addEventListener("mousedown", onStart);
+    document.addEventListener("mousemove", (e) => onMove(e.clientX));
+    document.addEventListener("mouseup", onEnd);
+
+    // Touch events (for tablets in landscape)
+    divider.addEventListener("touchstart", (e) => onStart(e), { passive: false });
+    document.addEventListener("touchmove", (e) => {
+        if (isDragging && e.touches.length === 1) {
+            onMove(e.touches[0].clientX);
+        }
+    }, { passive: true });
+    document.addEventListener("touchend", onEnd);
+}
+
+// ======================== 移动端侧边栏切换 ========================
+
+function initSidebarToggle() {
+    if (!btnToggleSidebar || !sceneSidebar) return;
+
+    btnToggleSidebar.addEventListener("click", () => {
+        sceneSidebar.classList.toggle("open");
+    });
+
+    // 移动端点击场景项后自动收起侧边栏
+    sceneList.addEventListener("click", (e) => {
+        if (e.target.closest(".scene-list-item") && window.innerWidth <= 768) {
+            sceneSidebar.classList.remove("open");
+        }
+    });
+}
+
+// 初始化分隔条拖拽和侧边栏切换
+initDividerDrag();
+initSidebarToggle();
