@@ -133,7 +133,7 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
     # 标题页
     title_para = doc.add_paragraph()
     title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title_para.space_before = Pt(120)
+    title_para.space_before = Pt(36)  # 适当间距，不再占整页
     title_run = title_para.add_run(screenplay.title or "剧本")
     title_run.bold = True
     title_run.font.size = Pt(24)
@@ -143,13 +143,10 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
     if screenplay.author:
         author_para = doc.add_paragraph()
         author_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        author_para.space_before = Pt(24)
+        author_para.space_before = Pt(12)
         author_run = author_para.add_run(f"原作：{screenplay.author}")
         author_run.font.size = Pt(14)
         author_run.font.name = 'Courier New'
-
-    # "剧本正文" 分隔
-    doc.add_page_break()
 
     # 遍历场景
     for i, scene in enumerate(screenplay.scenes):
@@ -157,6 +154,7 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
         scene_heading = format_scene_heading(scene.location or "", scene.time or "")
 
         heading_para = doc.add_paragraph()
+        heading_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
         heading_para.space_before = Pt(24) if i > 0 else Pt(12)
         heading_para.space_after = Pt(12)
         heading_run = heading_para.add_run(scene_heading)
@@ -167,6 +165,7 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
         # 场景描述（斜体）
         if scene.description:
             p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
             p.space_after = Pt(6)
             run = p.add_run(scene.description)
             run.italic = True
@@ -179,6 +178,7 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
                 if item.type == "dialogue":
                     # 角色名：大写、居中偏左（标准剧本缩进）
                     char_para = doc.add_paragraph()
+                    char_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
                     char_para.paragraph_format.left_indent = Cm(5.0)
                     char_para.space_before = Pt(6)
                     char_para.space_after = Pt(0)
@@ -191,17 +191,17 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
                     if item.action:
                         paren_para = doc.add_paragraph()
                         paren_para.paragraph_format.left_indent = Cm(4.0)
-                        paren_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        paren_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
                         paren_para.space_before = Pt(0)
                         paren_para.space_after = Pt(0)
                         paren_run = paren_para.add_run(f"({item.action})")
                         paren_run.font.size = Pt(12)
                         paren_run.font.name = 'Courier New'
 
-                    # 台词：左对齐，标准缩进
+                    # 台词：左对齐，适度缩进
                     line_para = doc.add_paragraph()
-                    line_para.paragraph_format.left_indent = Cm(3.0)
-                    line_para.paragraph_format.right_indent = Cm(3.0)
+                    line_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    line_para.paragraph_format.left_indent = Cm(1.5)
                     line_para.space_before = Pt(0)
                     line_para.space_after = Pt(6)
                     line_run = line_para.add_run(item.line or "")
@@ -210,6 +210,7 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
 
                 else:  # action
                     p = doc.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
                     p.space_before = Pt(6)
                     p.space_after = Pt(6)
                     # 动作描写：斜体，无方括号
@@ -224,6 +225,7 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
             # 兼容旧格式：分别处理 actions 和 dialogues
             for action in scene.actions:
                 p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 p.space_before = Pt(6)
                 p.space_after = Pt(6)
                 action_text = action.action or ""
@@ -237,6 +239,7 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
             for dialogue in scene.dialogues:
                 # 角色名
                 char_para = doc.add_paragraph()
+                char_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 char_para.paragraph_format.left_indent = Cm(5.0)
                 char_para.space_before = Pt(6)
                 char_para.space_after = Pt(0)
@@ -249,7 +252,7 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
                 if dialogue.action:
                     paren_para = doc.add_paragraph()
                     paren_para.paragraph_format.left_indent = Cm(4.0)
-                    paren_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    paren_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
                     paren_para.space_before = Pt(0)
                     paren_para.space_after = Pt(0)
                     paren_run = paren_para.add_run(f"({dialogue.action})")
@@ -258,8 +261,8 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
 
                 # 台词
                 line_para = doc.add_paragraph()
-                line_para.paragraph_format.left_indent = Cm(3.0)
-                line_para.paragraph_format.right_indent = Cm(3.0)
+                line_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                line_para.paragraph_format.left_indent = Cm(1.5)
                 line_para.space_before = Pt(0)
                 line_para.space_after = Pt(6)
                 line_run = line_para.add_run(dialogue.line or "")
@@ -269,6 +272,7 @@ def export_docx(screenplay: ScreenplayOutput) -> bytes:
         # 场景间分隔线（最后一个场景不加）
         if i < len(screenplay.scenes) - 1:
             sep_para = doc.add_paragraph()
+            sep_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
             sep_para.space_before = Pt(12)
             sep_para.space_after = Pt(12)
             sep_run = sep_para.add_run("─" * 30)
