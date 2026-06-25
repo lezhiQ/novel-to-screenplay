@@ -84,7 +84,7 @@
 **项目实践**：
 - `models.py` 用 Pydantic Model 定义数据类型：`ScreenplayOutput` 包含 `title` 和 `scenes: list[Scene]`，`Scene` 包含 `items: list[Union[Action, Dialogue]]`。
 - LLM 输出 YAML 字符串后，`converter.py` 先通过正则提取代码块内容，再用 `yaml.safe_load` 解析为字典。
-- 解析失败时有三级降级策略：预处理修复引号问题 → 修复缩进/冒号格式 → 宽松正则解析。最终如果都不成功则返回 None。
+- 解析失败时有四层容错策略：直接解析 → 修复引号问题 → 修复缩进/冒号格式 → 宽松正则解析，逐级降级直到成功。
 
 **延伸**：
 - 为什么不直接用 JSON？→ JSON 不支持注释，人类可读性不如 YAML；但 JSON 解析更快且不会有格式歧义。YAML 更适合剧本这种需要人工编辑的场景。
